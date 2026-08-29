@@ -1,0 +1,35 @@
+name: Deploy Development
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: development
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: development
+      url: https://${{ vars.APP_DOMAIN }}
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Deploy
+        run: |
+          echo "Deploy to ${{ vars.EC2_INSTANCE_ID }}"
