@@ -1,0 +1,39 @@
+name: Deploy Production
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: production
+      url: https://${{ vars.APP_DOMAIN }}
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "${{ vars.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Deploy production
+        run: |
+          ssh -p "${{ vars.HETZNER_PORT }}" \
+            "${{ vars.DEPLOY_USER }}@${{ vars.HETZNER_HOST }}" \
+            "cd '${{ vars.DEPLOY_PATH }}' && docker compose pull && docker compose up -d"
