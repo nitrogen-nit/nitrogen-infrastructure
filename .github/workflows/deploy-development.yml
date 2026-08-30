@@ -39,6 +39,7 @@ jobs:
       AWS_REGION: ${{ vars.AWS_REGION }}
       EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
       DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+      NITROGEN_ENVIRONMENT: ${{ vars.NITROGEN_ENVIRONMENT }}
       BACKEND_IMAGE: ${{ inputs.backend_image || vars.BACKEND_IMAGE }}
       BACKEND_IMAGE_DIGEST: ${{ inputs.backend_image_digest || vars.BACKEND_IMAGE_DIGEST }}
       BACKEND_VERSION: ${{ inputs.backend_version || vars.BACKEND_VERSION }}
@@ -50,7 +51,7 @@ jobs:
         id: contract
         run: |
           set -euo pipefail
-          for name in AWS_ROLE_ARN AWS_REGION EC2_INSTANCE_ID DEPLOY_PATH BACKEND_IMAGE BACKEND_IMAGE_DIGEST BACKEND_VERSION; do
+          for name in AWS_ROLE_ARN AWS_REGION EC2_INSTANCE_ID DEPLOY_PATH NITROGEN_ENVIRONMENT BACKEND_IMAGE BACKEND_IMAGE_DIGEST BACKEND_VERSION; do
             if [ -z "${!name}" ]; then
               echo "::error::Missing required deployment value: $name"
               exit 1
@@ -83,9 +84,11 @@ jobs:
               --arg backend_digest "$BACKEND_IMAGE_DIGEST" \
               --arg backend_ref "$BACKEND_IMAGE_REF" \
               --arg backend_version "$BACKEND_VERSION" \
+              --arg nitrogen_environment "$NITROGEN_ENVIRONMENT" \
               '[
                 "set -euo pipefail",
                 "cd " + ($deploy_path | @sh),
+                "export NITROGEN_ENVIRONMENT=" + ($nitrogen_environment | @sh),
                 "export BACKEND_IMAGE=" + ($backend_image | @sh),
                 "export BACKEND_IMAGE_DIGEST=" + ($backend_digest | @sh),
                 "export BACKEND_IMAGE_REF=" + ($backend_ref | @sh),
