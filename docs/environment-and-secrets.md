@@ -49,6 +49,10 @@ Development runtime config for the app should be stored on AWS:
 | `NITROGEN_RABBIT_PASSWORD` | SSM SecureString or Secrets Manager secret |
 | `NITROGEN_RABBIT_HEALTH_ENABLED` | SSM String `/nitrogen/dev/rabbit/health-enabled` |
 | `NITROGEN_LOG_LEVEL` | SSM String `/nitrogen/dev/log-level` |
+| `NITROGEN_APPLICATION_VERSION` | SSM String `/nitrogen/dev/application-version` |
+| `NITROGEN_TRACING_ENABLED` | SSM String `/nitrogen/dev/tracing/enabled` |
+| `NITROGEN_TRACING_SAMPLING_PROBABILITY` | SSM String `/nitrogen/dev/tracing/sampling-probability` |
+| `NITROGEN_OTLP_ENDPOINT` | SSM String `/nitrogen/dev/otlp/endpoint` |
 
 ## Production Variables And Secrets
 
@@ -88,6 +92,10 @@ platform secret store, not in repository files:
 | `NITROGEN_RABBIT_PASSWORD` | Host secret file or production secret store |
 | `NITROGEN_RABBIT_HEALTH_ENABLED` | Host env file |
 | `NITROGEN_LOG_LEVEL` | Host env file |
+| `NITROGEN_APPLICATION_VERSION` | Host env file |
+| `NITROGEN_TRACING_ENABLED` | Host env file |
+| `NITROGEN_TRACING_SAMPLING_PROBABILITY` | Host env file |
+| `NITROGEN_OTLP_ENDPOINT` | Host env file or production observability config |
 
 ## Deployment Script Contract
 
