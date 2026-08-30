@@ -39,6 +39,7 @@ jobs:
       DEPLOY_USER: ${{ vars.DEPLOY_USER }}
       DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
       SSH_KNOWN_HOSTS: ${{ vars.SSH_KNOWN_HOSTS }}
+      NITROGEN_ENVIRONMENT: ${{ vars.NITROGEN_ENVIRONMENT }}
       BACKEND_IMAGE: ${{ inputs.backend_image || vars.BACKEND_IMAGE }}
       BACKEND_IMAGE_DIGEST: ${{ inputs.backend_image_digest || vars.BACKEND_IMAGE_DIGEST }}
       BACKEND_VERSION: ${{ inputs.backend_version || github.ref_name }}
@@ -50,7 +51,7 @@ jobs:
         id: contract
         run: |
           set -euo pipefail
-          for name in HETZNER_HOST HETZNER_PORT DEPLOY_USER DEPLOY_PATH SSH_KNOWN_HOSTS BACKEND_IMAGE BACKEND_IMAGE_DIGEST BACKEND_VERSION; do
+          for name in HETZNER_HOST HETZNER_PORT DEPLOY_USER DEPLOY_PATH SSH_KNOWN_HOSTS NITROGEN_ENVIRONMENT BACKEND_IMAGE BACKEND_IMAGE_DIGEST BACKEND_VERSION; do
             if [ -z "${!name}" ]; then
               echo "::error::Missing required deployment value: $name"
               exit 1
@@ -83,10 +84,10 @@ jobs:
           set -euo pipefail
           ssh -p "$HETZNER_PORT" \
             "$DEPLOY_USER@$HETZNER_HOST" \
-            "DEPLOY_PATH='$DEPLOY_PATH' BACKEND_IMAGE='$BACKEND_IMAGE' BACKEND_IMAGE_DIGEST='$BACKEND_IMAGE_DIGEST' BACKEND_IMAGE_REF='$BACKEND_IMAGE_REF' BACKEND_VERSION='$BACKEND_VERSION' bash -se" <<'REMOTE'
+            "DEPLOY_PATH='$DEPLOY_PATH' NITROGEN_ENVIRONMENT='$NITROGEN_ENVIRONMENT' BACKEND_IMAGE='$BACKEND_IMAGE' BACKEND_IMAGE_DIGEST='$BACKEND_IMAGE_DIGEST' BACKEND_IMAGE_REF='$BACKEND_IMAGE_REF' BACKEND_VERSION='$BACKEND_VERSION' bash -se" <<'REMOTE'
           set -euo pipefail
           cd "$DEPLOY_PATH"
-          export BACKEND_IMAGE BACKEND_IMAGE_DIGEST BACKEND_IMAGE_REF BACKEND_VERSION
+          export NITROGEN_ENVIRONMENT BACKEND_IMAGE BACKEND_IMAGE_DIGEST BACKEND_IMAGE_REF BACKEND_VERSION
           ./scripts/predeploy-backend.sh
           ./scripts/migrate-backend.sh
           ./scripts/deploy-backend.sh
