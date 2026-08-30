@@ -1,0 +1,20 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    stack: nitrogen-observability
+
+scrape_configs:
+  - job_name: nitrogen-backend
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - host.docker.internal:8080
+        labels:
+          application: nitrogen-backend
+          environment: local
+
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - localhost:9090
