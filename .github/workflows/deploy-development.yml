@@ -4,6 +4,20 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      backend_image:
+        description: "Container image repository"
+        required: false
+        type: string
+      backend_image_digest:
+        description: "Immutable image digest, for example sha256:..."
+        required: false
+        type: string
+      backend_version:
+        description: "Backend version, usually sha-<git-sha>"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -20,16 +34,85 @@ jobs:
       url: https://${{ vars.APP_DOMAIN }}
 
     runs-on: ubuntu-latest
+    env:
+      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+      BACKEND_IMAGE: ${{ inputs.backend_image || vars.BACKEND_IMAGE }}
+      BACKEND_IMAGE_DIGEST: ${{ inputs.backend_image_digest || vars.BACKEND_IMAGE_DIGEST }}
+      BACKEND_VERSION: ${{ inputs.backend_version || vars.BACKEND_VERSION }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
+
+      - name: Validate deployment contract
+        id: contract
+        run: |
+          set -euo pipefail
+          for name in AWS_ROLE_ARN AWS_REGION EC2_INSTANCE_ID DEPLOY_PATH BACKEND_IMAGE BACKEND_IMAGE_DIGEST BACKEND_VERSION; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing required deployment value: $name"
+              exit 1
+            fi
+          done
+          case "$BACKEND_IMAGE_DIGEST" in
+            sha256:*) ;;
+            *)
+              echo "::error::BACKEND_IMAGE_DIGEST must start with sha256:"
+              exit 1
+              ;;
+          esac
+          echo "backend_ref=${BACKEND_IMAGE}@${BACKEND_IMAGE_DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Deploy
+      - name: Deploy development through SSM
+        env:
+          BACKEND_IMAGE_REF: ${{ steps.contract.outputs.backend_ref }}
         run: |
-          echo "Deploy to ${{ vars.EC2_INSTANCE_ID }}"
+          set -euo pipefail
+          commands_json="$(
+            jq -nc \
+              --arg deploy_path "$DEPLOY_PATH" \
+              --arg backend_image "$BACKEND_IMAGE" \
+              --arg backend_digest "$BACKEND_IMAGE_DIGEST" \
+              --arg backend_ref "$BACKEND_IMAGE_REF" \
+              --arg backend_version "$BACKEND_VERSION" \
+              '[
+                "set -euo pipefail",
+                "cd " + ($deploy_path | @sh),
+                "export BACKEND_IMAGE=" + ($backend_image | @sh),
+                "export BACKEND_IMAGE_DIGEST=" + ($backend_digest | @sh),
+                "export BACKEND_IMAGE_REF=" + ($backend_ref | @sh),
+                "export BACKEND_VERSION=" + ($backend_version | @sh),
+                "./scripts/predeploy-backend.sh",
+                "./scripts/migrate-backend.sh",
+                "./scripts/deploy-backend.sh",
+                "./scripts/healthcheck-backend.sh",
+                "./scripts/smoke-test-backend.sh"
+              ]'
+          )"
+
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$EC2_INSTANCE_ID" \
+              --document-name "AWS-RunShellScript" \
+              --comment "Deploy Nitrogen backend ${BACKEND_VERSION} to development" \
+              --parameters "commands=$commands_json" \
+              --query "Command.CommandId" \
+              --output text
+          )"
+
+          aws ssm wait command-executed \
+            --command-id "$command_id" \
+            --instance-id "$EC2_INSTANCE_ID"
+
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$EC2_INSTANCE_ID" \
+            --query "{Status:Status,StandardOutput:StandardOutputContent,StandardError:StandardErrorContent}"

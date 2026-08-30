@@ -4,6 +4,20 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      backend_image:
+        description: "Container image repository"
+        required: false
+        type: string
+      backend_image_digest:
+        description: "Immutable image digest, for example sha256:..."
+        required: false
+        type: string
+      backend_version:
+        description: "Backend version, usually vX.Y.Z"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -19,21 +33,63 @@ jobs:
       url: https://${{ vars.APP_DOMAIN }}
 
     runs-on: ubuntu-latest
+    env:
+      HETZNER_HOST: ${{ vars.HETZNER_HOST }}
+      HETZNER_PORT: ${{ vars.HETZNER_PORT }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+      SSH_KNOWN_HOSTS: ${{ vars.SSH_KNOWN_HOSTS }}
+      BACKEND_IMAGE: ${{ inputs.backend_image || vars.BACKEND_IMAGE }}
+      BACKEND_IMAGE_DIGEST: ${{ inputs.backend_image_digest || vars.BACKEND_IMAGE_DIGEST }}
+      BACKEND_VERSION: ${{ inputs.backend_version || github.ref_name }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
+
+      - name: Validate deployment contract
+        id: contract
+        run: |
+          set -euo pipefail
+          for name in HETZNER_HOST HETZNER_PORT DEPLOY_USER DEPLOY_PATH SSH_KNOWN_HOSTS BACKEND_IMAGE BACKEND_IMAGE_DIGEST BACKEND_VERSION; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing required deployment value: $name"
+              exit 1
+            fi
+          done
+          case "$BACKEND_IMAGE_DIGEST" in
+            sha256:*) ;;
+            *)
+              echo "::error::BACKEND_IMAGE_DIGEST must start with sha256:"
+              exit 1
+              ;;
+          esac
+          echo "backend_ref=${BACKEND_IMAGE}@${BACKEND_IMAGE_DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Configure SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
         run: |
+          set -euo pipefail
+          test -n "$SSH_PRIVATE_KEY"
           install -m 700 -d ~/.ssh
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          printf '%s\n' "${{ vars.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
 
       - name: Deploy production
+        env:
+          BACKEND_IMAGE_REF: ${{ steps.contract.outputs.backend_ref }}
         run: |
-          ssh -p "${{ vars.HETZNER_PORT }}" \
-            "${{ vars.DEPLOY_USER }}@${{ vars.HETZNER_HOST }}" \
-            "cd '${{ vars.DEPLOY_PATH }}' && docker compose pull && docker compose up -d"
+          set -euo pipefail
+          ssh -p "$HETZNER_PORT" \
+            "$DEPLOY_USER@$HETZNER_HOST" \
+            "DEPLOY_PATH='$DEPLOY_PATH' BACKEND_IMAGE='$BACKEND_IMAGE' BACKEND_IMAGE_DIGEST='$BACKEND_IMAGE_DIGEST' BACKEND_IMAGE_REF='$BACKEND_IMAGE_REF' BACKEND_VERSION='$BACKEND_VERSION' bash -se" <<'REMOTE'
+          set -euo pipefail
+          cd "$DEPLOY_PATH"
+          export BACKEND_IMAGE BACKEND_IMAGE_DIGEST BACKEND_IMAGE_REF BACKEND_VERSION
+          ./scripts/predeploy-backend.sh
+          ./scripts/migrate-backend.sh
+          ./scripts/deploy-backend.sh
+          ./scripts/healthcheck-backend.sh
+          ./scripts/smoke-test-backend.sh
+          REMOTE
